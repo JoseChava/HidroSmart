@@ -1,3 +1,7 @@
+// =============================
+// Sistema de Riego Inteligente - POO
+// =============================
+
 class ZonaRiego {
   private:
     int pinBomba;
@@ -56,15 +60,19 @@ class ZonaRiego {
     }
 
     bool esDiaDeRiego(String fechaActual) {
+      // -1 = NUNCA regar
       if (diasEntreRiego == -1) {
+        Serial.println("❌ " + String(pinBomba) + " configurada para NUNCA regar");
         return false;
       }
       
+      // 0 = regar TODOS LOS DÍAS
       if (diasEntreRiego == 0) {
         return true;
       }
       
       if (ultimoDiaRiego == "2000-01-01") {
+        Serial.println("✅ " + String(pinBomba) + " primera vez que riega");
         return true;
       }
       
@@ -82,6 +90,15 @@ class ZonaRiego {
                                    (diaActual - diaUltimo);
         
         bool puedeRegar = (diasDesdeUltimoRiego >= diasEntreRiego + 1);
+        
+        if (puedeRegar) {
+          Serial.println("" + String(pinBomba) + " cumple frecuencia: " + 
+                        String(diasDesdeUltimoRiego) + "d >= " + String(diasEntreRiego + 1) + "d");
+        } else {
+          Serial.println(" " + String(pinBomba) + " no cumple frecuencia: " + 
+                        String(diasDesdeUltimoRiego) + "d < " + String(diasEntreRiego + 1) + "d");
+        }
+        
         return puedeRegar;
       }
       
@@ -93,11 +110,14 @@ class ZonaRiego {
     }
 
     bool debeDetenerRiego(String horaActual) {
+      
       if (humedadActual >= humedadMaxima) {
+        Serial.println("💧 Humedad suficiente (" + String(humedadActual) + "%), deteniendo riego");
         return true;
       }
       
       if (!estaEnHorario(horaActual) && humedadActual >= humedadMinima) {
+        Serial.println("🕒 Fuera de horario y humedad no crítica, deteniendo riego");
         return true;
       }
       
@@ -115,17 +135,24 @@ class ZonaRiego {
         digitalWrite(pinBomba, HIGH);
         bombaActiva = true;
         actualizarUltimoRiego(fechaActual);
+        Serial.println(" " + zona + " ACTIVADA - Humedad: " + String(humedadActual) + 
+                      "% (Umbral: <" + String(humedadMinima) + "%)");
       } 
       else if (bombaActiva) {
         if (debeDetenerRiego(horaActual)) {
           digitalWrite(pinBomba, LOW);
           bombaActiva = false;
+          Serial.println("" + zona + " DETENIDA");
+        } else {
+          Serial.println("" + zona + " MANTENIENDO - Humedad: " + String(humedadActual) + "%");
         }
       }
       else if (!bombaActiva && condicionesCumplidas) {
         digitalWrite(pinBomba, HIGH);
         bombaActiva = true;
         actualizarUltimoRiego(fechaActual);
+        Serial.println(" " + zona + " RE-ACTIVADA - Humedad bajó a: " + String(humedadActual) + 
+                      "% (Umbral: <" + String(humedadMinima) + "%)");
       }
       
       evaluandoRiego = false;
@@ -137,6 +164,11 @@ class ZonaRiego {
       diasEntreRiego = dias;
       humedadMinima = humMin;
       humedadMaxima = humMax;
+      
+      String frecuencia = getFrecuenciaTexto(dias);
+      Serial.println("⚙ " + String(pinBomba) + " actualizada: " + inicio + "-" + fin + 
+                    " | Frecuencia: " + frecuencia + 
+                    " | Humedad: <" + String(humMin) + "% -> >=" + String(humMax) + "%");
     }
 
     String getFrecuenciaTexto(int diasConfig) {
@@ -158,6 +190,11 @@ class ZonaRiego {
     String getFrecuencia() { return getFrecuenciaTexto(diasEntreRiego); }
 };
 
+
+// =============================
+// Clase principal del sistema
+// =============================
+
 class SistemaRiego {
   private:
     ZonaRiego zona1;
@@ -172,9 +209,9 @@ class SistemaRiego {
 
   public:
     SistemaRiego():
-      zona1(2, A0, "15:00", "20:30", 1, 30, 60),
-      zona2(3, A1, "15:00", "20:30", 1, 30, 60),
-      zona3(4, A2, "20:00", "20:30", 2, 30, 60)
+      zona1(2, A0, "15:00", "20:30", 1, 30, 60),  // 1 = cada 2 días
+      zona2(3, A1, "15:00", "20:30", 1, 30, 60),  // 1 = cada 2 días
+      zona3(4, A2, "20:00", "20:30", 2, 30, 60)   // 2 = cada 3 días
     {
       horaActual = "00:00";
       fechaActual = "2000-01-01";
@@ -189,6 +226,10 @@ class SistemaRiego {
       zona1.iniciar();
       zona2.iniciar();
       zona3.iniciar();
+      Serial.println(" HIDROSMART POO INICIADO");
+      Serial.println(" Sistema con umbrales de humedad configurables por zona");
+      Serial.println(" Nuevo sistema de frecuencia: -1=Nunca, 0=Diario, 1=Cada 2 días, 2=Cada 3 días...");
+      Serial.println(" Riego de emergencia activo - Ignora horarios si humedad crítica");
     }
 
     void actualizarHumedades() {
@@ -198,28 +239,31 @@ class SistemaRiego {
     }
 
     void mostrarEstado() {
-      Serial.print("Fecha: "); Serial.print(fechaActual);
-      Serial.print(" Hora: "); Serial.print(horaActual);
+      Serial.print(" "); Serial.print(fechaActual);
+      Serial.print(" "); Serial.print(horaActual);
       
-      Serial.print(" | Z1:"); Serial.print(zona1.getHumedad());
+      // Mostrar información de Zona 1
+      Serial.print(" |  Z1:"); Serial.print(zona1.getHumedad());
       Serial.print("% ("); Serial.print(zona1.getFrecuencia());
       Serial.print("/<"); Serial.print(zona1.getHumedadMinima());
-      Serial.print("%)");
+      Serial.print("%"); Serial.print(")");
       
+      // Mostrar información de Zona 2
       Serial.print(" | Z2:"); Serial.print(zona2.getHumedad());
       Serial.print("% ("); Serial.print(zona2.getFrecuencia());
       Serial.print("/<"); Serial.print(zona2.getHumedadMinima());
-      Serial.print("%)");
+      Serial.print("%"); Serial.print(")");
       
+      // Mostrar información de Zona 3
       Serial.print(" | Z3:"); Serial.print(zona3.getHumedad());
       Serial.print("% ("); Serial.print(zona3.getFrecuencia());
       Serial.print("/<"); Serial.print(zona3.getHumedadMinima());
-      Serial.print("%)");
+      Serial.print("%"); Serial.print(")");
       
-      Serial.print(" | Lluvia: "); Serial.print(probabilidadLluvia);
+      Serial.print(" | 🌧 "); Serial.print(probabilidadLluvia);
       Serial.println("%");
       
-      Serial.print("Bombas - Z1:"); Serial.print(zona1.getEstado() ? "ON" : "OFF");
+      Serial.print(" Bombas - Z1:"); Serial.print(zona1.getEstado() ? "ON" : "OFF");
       Serial.print(" Z2:"); Serial.print(zona2.getEstado() ? "ON" : "OFF");
       Serial.print(" Z3:"); Serial.println(zona3.getEstado() ? "ON" : "OFF");
     }
@@ -234,7 +278,23 @@ class SistemaRiego {
                                     enHorario &&
                                     esDiaRiego);
       
-      return condicionesEmergencia || condicionesProgramadas;
+      bool condiciones = condicionesEmergencia || condicionesProgramadas;
+      
+      if (condiciones) {
+        if (!enHorario) {
+          Serial.println(" " + zona + " ACTIVACIÓN DE EMERGENCIA - Humedad: " + 
+                        String(humedad) + "% < " + String(humedadMinima) + "%");
+        } else {
+          Serial.println("✅ " + zona + " ACTIVACIÓN PROGRAMADA - Humedad: " + 
+                        String(humedad) + "% < " + String(humedadMinima) + "%");
+        }
+      } else {
+        if (!esDiaRiego) {
+          Serial.println(" " + zona + " No es día de riego según frecuencia configurada");
+        }
+      }
+      
+      return condiciones;
     }
 
     void evaluar() {
@@ -258,6 +318,7 @@ class SistemaRiego {
     }
 
     void procesarDatos(String datos) {
+      // Nuevo formato: fecha|hora|lluvia|z1_horarios|z2_horarios|z3_horarios|diasZ1|diasZ2|diasZ3|humMinZ1|humMaxZ1|humMinZ2|humMaxZ2|humMinZ3|humMaxZ3
       int pos1 = datos.indexOf('|');
       int pos2 = datos.indexOf('|', pos1 + 1);
       int pos3 = datos.indexOf('|', pos2 + 1);
@@ -300,6 +361,8 @@ class SistemaRiego {
       zona1.actualizarConfiguracion(z1.substring(0, z1.indexOf('-')), z1.substring(z1.indexOf('-') + 1), diasZ1, humMinZ1, humMaxZ1);
       zona2.actualizarConfiguracion(z2.substring(0, z2.indexOf('-')), z2.substring(z2.indexOf('-') + 1), diasZ2, humMinZ2, humMaxZ2);
       zona3.actualizarConfiguracion(z3.substring(0, z3.indexOf('-')), z3.substring(z3.indexOf('-') + 1), diasZ3, humMinZ3, humMaxZ3);
+
+      Serial.println("Configuración actualizada desde Python con umbrales por zona");
 
       actualizarHumedades();
       evaluar();
